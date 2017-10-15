@@ -17,7 +17,7 @@ class Macro:
         self.numAntenna = 0
         self.power_dbm = 0
         self.power_W = 0
-
+        self.ServedUE = []
         self.UEPosition_x = []
         self.UEPosition_y = []
 
@@ -242,6 +242,12 @@ def SelectCooperatedBS(para, macro, pico, user):
     Alluser_selectedBS_index_copy = []
     selectedBS_index = []
 
+    macro.ServedUE = []
+    for j in range(macro.ActualNum):
+        macro.ServedUE.append([])
+
+    print("len=", len(macro.ServedUE))
+
     # For each UE, determine the received power from every BS
     for a in range(user.ActualNum):
         avg_receivedpower_MBS = []
@@ -251,39 +257,34 @@ def SelectCooperatedBS(para, macro, pico, user):
 
         # Select the best (selectedMBSnum) BSs to form a cluster    
         selectedMBS = heapq.nlargest(para.selectedMBSnum, avg_receivedpower_MBS)
-        selectedBS_index = [avg_receivedpower_MBS.index(x) for x in selectedMBS]   
+        selectedBS_index = [avg_receivedpower_MBS.index(x) for x in selectedMBS]
+        [print(x, a) for x in selectedBS_index]
+
+        [macro.ServedUE[x].append(a)  for x in selectedBS_index]
         user.Alluser_selectedBS_index.append(sorted(selectedBS_index))
+    print(user.Alluser_selectedBS_index)
+    print("macro.ServedUE=", macro.ServedUE)
 
-    Alluser_selectedBS_index_copy = user.Alluser_selectedBS_index[:]
 
-    # If two users select the same set of BSs, remove the redudant one
-    #print("Alluser_selectedBS_index_copy=", Alluser_selectedBS_index_copy)
-    for a in range(user.ActualNum):
-        for i in range(1,user.ActualNum - a):
-            if user.Alluser_selectedBS_index[a] == user.Alluser_selectedBS_index[a + i]:
-                Alluser_selectedBS_index_copy[a + i] = 0
-    #print("Alluser_selectedBS_index_copy1=", Alluser_selectedBS_index_copy) 
-              
-
-    # Copy Alluser_selectedBS_index_copy to cluster
+    # Copy Alluser_selectedBS_index to cluster
     cluster = [] 
     a = 0
-    for j in Alluser_selectedBS_index_copy:
+    for j in user.Alluser_selectedBS_index:
         if j != 0:
             cluster.append(Cluster_father())
             cluster[a].mbs.index = j
             for k in cluster[a].mbs.index:
                 cluster[a].mbs.Position_inCiuster_x.append(macro.Position_x[k])
                 cluster[a].mbs.Position_inCiuster_y.append(macro.Position_y[k])
+            print("cluster=", a, cluster[a].mbs.index)
             a = a + 1
-    #print(Alluser_selectedBS_index_copy.__len__())
-    #print(len(cluster))
-    #print(user.ActualNum)
 
 
     for j in range(user.ActualNum):   #Attach users 
         for i in range(len(cluster)):
+            print("i=", i, "cluster[i].mbs.index=", cluster[i].mbs.index, "j=", j, "user.Alluser_selectedBS_index[j]", user.Alluser_selectedBS_index[j])
             if cluster[i].mbs.index == user.Alluser_selectedBS_index[j]:
+                print("true")
                 cluster[i].ue.Position_x.append(user.Position_x[j])
                 cluster[i].ue.Position_y.append(user.Position_y[j])
 
@@ -488,7 +489,7 @@ print(user.density)
 para = Para()
 para.LoadingFactor = 0.4
 para.SINRthreshold = [10]
-para.selectedMBSnum = 1 # cluster size
+para.selectedMBSnum = 2 # cluster size
 
 # SimulationRegion
 para.SimulationRegion = 100
