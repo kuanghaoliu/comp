@@ -3,9 +3,10 @@ import random
 import numpy as np
 from numpy.linalg import inv
 import heapq
-from scipy.spatial import Voronoi, voronoi_plot_2d
-import matplotlib.pyplot as plt
+#from scipy.spatial import Voronoi, voronoi_plot_2d
+#import matplotlib.pyplot as plt
 from sys import exit
+import pdb
 
 class Macro:
     def __init__(self):
@@ -17,7 +18,10 @@ class Macro:
         self.numAntenna = 0
         self.power_dbm = 0
         self.power_W = 0
-        self.ServedUE = []
+        self.ServedUE = [] # The associated UE
+        self.CoordinatedUE = [] # All the UEs that send association request 
+        self.NumServedUE = []
+        self.NumRequest = []
         self.UEPosition_x = []
         self.UEPosition_y = []
 
@@ -82,6 +86,7 @@ class Cluster_father:
         self.mbs = MBS()
         self.pbs = PBS()
         self.channel = Channel()
+        self.ServedUE = []
 
 class UE:
     def __init__(self):
@@ -125,6 +130,14 @@ class Channel:
         self.ZF_beam_weight = []
         self.ZF_beam_weight_normalize = []
 
+class Analytical:
+    def __init__(self):
+        self.pa = 0 # Active probability of a BS
+
+class Debug:
+    FILE = True
+        
+
 def GenerateMBSPosition(para, macro):
     Position_x = []
     Position_y = []
@@ -149,7 +162,6 @@ def GenerateMBSPosition(para, macro):
         macro.Position_y.append(Position_y[dis_MBS_center.index(i)])
 
     
-
     return macro
 
 def GeneratePBSPosition(para, pico):
@@ -168,7 +180,6 @@ def GenerateUserPosition(para, user):
     user.ActualNum = np.random.poisson(para.SimulationRegion * para.SimulationRegion * user.density)
     while user.ActualNum < 1:
         user.ActualNum = np.random.poisson(para.SimulationRegion * para.SimulationRegion * user.density)
-        print(user.ActualNum)
 
     user.Position_x, user.Position_y = GeneratePosition(user.ActualNum, para.SimulationRegion)
 
@@ -243,10 +254,13 @@ def SelectCooperatedBS(para, macro, pico, user):
     selectedBS_index = []
 
     macro.ServedUE = []
+    macro.NumServedUE = []
     for j in range(macro.ActualNum):
         macro.ServedUE.append([])
+        macro.NumServedUE.append([])
+        macro.CoordinatedUE.append([])
+        macro.NumRequest.append([])
 
-    print("len=", len(macro.ServedUE))
 
     # For each UE, determine the received power from every BS
     for a in range(user.ActualNum):
@@ -255,38 +269,61 @@ def SelectCooperatedBS(para, macro, pico, user):
             #avg_receivedpower_MBS.append(macro.power_W * ((macro.Position_x[i] - user.Position_x[a])**2 + (macro.Position_y[i] - user.Position_y[a])**2)**(1/2 * (- para.PathLoss_exponent)))
             avg_receivedpower_MBS.append( macro.power_W * math.pow( math.sqrt( (macro.Position_x[i] - user.Position_x[a])**2 + (macro.Position_y[i] - user.Position_y[a])**2 ), - para.PathLoss_exponent) )
 
-        # Select the best (selectedMBSnum) BSs to form a cluster    
+        # Select the best (selectedMBSnum) BSs to form a cluster for each UE   
         selectedMBS = heapq.nlargest(para.selectedMBSnum, avg_receivedpower_MBS)
-        selectedBS_index = [avg_receivedpower_MBS.index(x) for x in selectedMBS]
-        [print(x, a) for x in selectedBS_index]
+        selectedBS_index = [avg_receivedpower_MBS.index(x) for x in selectedMBS]      
+        #[print(x, a) for x in selectedBS_index]
+        #print(selectedBS_index)
+        macro.ServedUE[selectedBS_index[0]].append(a)
 
-        [macro.ServedUE[x].append(a)  for x in selectedBS_index]
+        [macro.CoordinatedUE[x].append(a)  for x in selectedBS_index[1:]]
+
         user.Alluser_selectedBS_index.append(sorted(selectedBS_index))
-    print(user.Alluser_selectedBS_index)
-    print("macro.ServedUE=", macro.ServedUE)
+    #print("MBS selected by each user=", user.Alluser_selectedBS_index)
+    #print("macro.ServedUE=", macro.ServedUE)
+    #print("macro.CoordinatedUE=", macro.CoordinatedUE)
 
+    [macro.NumServedUE[i].append(len(macro.ServedUE[i])) for i in range(macro.ActualNum)]
+    [macro.NumRequest[i].append(len(macro.CoordinatedUE[i])) for i in range(macro.ActualNum)]
+    #for i in range(macro.ActualNum):
+    #    macro.NumServedUE[i]len(macro.ServedUE[i]) 
+    #print("Num of Served UEs={}".format(macro.NumServedUE))
+    #print("Num of Request={}".format(macro.NumRequest))
 
+    Alluser_selectedBS_index_copy = user.Alluser_selectedBS_index[:]
+
+    # If two users select the same set of BSs, remove the redudant one
+    #print("Alluser_selectedBS_index_copy=", Alluser_selectedBS_index_copy)
+    for a in range(user.ActualNum):
+        for i in range(1,user.ActualNum - a):
+            if user.Alluser_selectedBS_index[a] == user.Alluser_selectedBS_index[a + i]:
+                Alluser_selectedBS_index_copy[a + i] = 0
+                
     # Copy Alluser_selectedBS_index to cluster
     cluster = [] 
     a = 0
-    for j in user.Alluser_selectedBS_index:
+    for j in Alluser_selectedBS_index_copy:
         if j != 0:
             cluster.append(Cluster_father())
             cluster[a].mbs.index = j
             for k in cluster[a].mbs.index:
                 cluster[a].mbs.Position_inCiuster_x.append(macro.Position_x[k])
                 cluster[a].mbs.Position_inCiuster_y.append(macro.Position_y[k])
-            print("cluster=", a, cluster[a].mbs.index)
+            #print("cluster={} member={}".format(a,cluster[a].mbs.index))
             a = a + 1
 
 
-    for j in range(user.ActualNum):   #Attach users 
+    for j in range(user.ActualNum):   #Attach users to each cluster
         for i in range(len(cluster)):
-            print("i=", i, "cluster[i].mbs.index=", cluster[i].mbs.index, "j=", j, "user.Alluser_selectedBS_index[j]", user.Alluser_selectedBS_index[j])
+            #print("For user={}, selected BS={}, cluster={}, BS={}".format{j, user.Alluser_selectedBS_index[j], i, cluster[i].mbs.index)
             if cluster[i].mbs.index == user.Alluser_selectedBS_index[j]:
-                print("true")
+                #print("true")
                 cluster[i].ue.Position_x.append(user.Position_x[j])
                 cluster[i].ue.Position_y.append(user.Position_y[j])
+                cluster[i].ServedUE.append(j)
+    
+    #for i in range(len(cluster)):     
+    #    print("Cluster {}, served UE={}".format(i, cluster[i].ServedUE))
 
     # for i in range(len(cluster)):
     #     for a in range(len(cluster[i].ue.Position_x)):
@@ -461,9 +498,13 @@ def dbtonumber(a):
     b = math.pow(10, (a / 10))
     return b
 
+def Anal_pa(macro, user):
+    pa = 1-pow( 1+ 1/3.5/( macro.density/user.density), -3.5 )
+    return pa
+
 # ************************************************************************************************************************************#
 # *************************************************BS Parameters***************************************************************************#
-SimulationTime = 1
+SimulationTime = 10
 
 # Macro
 macro = Macro()
@@ -492,7 +533,7 @@ para.SINRthreshold = [10]
 para.selectedMBSnum = 2 # cluster size
 
 # SimulationRegion
-para.SimulationRegion = 100
+para.SimulationRegion = 200
 # pathloss
 para.PathLoss_exponent = 3.76
 para.PassLoss_reference_d = 0.3920
@@ -506,6 +547,18 @@ simulationcoverage = []
 meancapacity = []
 meancoverage= []
 
+if Debug.FILE:
+    filename = "NumServedUE.txt"
+    FILE1 = open(filename, "w")
+
+    filename = "NumRequest.txt"
+    FILE2 = open(filename, "w")
+
+pa = Anal_pa(macro, user)
+print("pa={}".format(pa))
+
+
+       
 # Initialize result holder
 simulatemeancapacity = []
 simulatemeancoverage = []
@@ -518,23 +571,31 @@ for simulationtime in range(SimulationTime):
     #user = USER()
     user = GenerateUserPosition(para, user)
     para, cluster, macro, user = SelectCooperatedBS(para, macro, pico, user)
-    para, cluster = Cluster_GenerateChannelZFbeamParameter(para, cluster, macro)
-    para, cluster = Cluster_GenerateChannel(para, cluster, macro)
-    para, cluster = Cluster_GenerateZFbeam(para, cluster,macro)
-    para, cluster = Cluster_ReceivedPower(para, cluster, macro)
-    simulatemeancapacity.append(para.TotalCapacity)
-    for i in range(len(SINRthreshold)):
-        simulatemeancoverage[i] = simulatemeancoverage[i] + para.successnum[i]
-        print(simulationtime, simulatemeancoverage)
+    if Debug.FILE:
+        [FILE1.write('%s \n' % macro.NumServedUE[i][0]) for i in range(macro.ActualNum)]
+        [FILE2.write('%s \n' % macro.CoordinatedUE[i][0]) for i in range(macro.ActualNum)]
+        #print(macro.CoordinatedUE[i][0])
+##    pdb.set_trace()
+##    
+##    para, cluster = Cluster_GenerateChannelZFbeamParameter(para, cluster, macro)
+##    para, cluster = Cluster_GenerateChannel(para, cluster, macro)
+##    para, cluster = Cluster_GenerateZFbeam(para, cluster,macro)
+##    para, cluster = Cluster_ReceivedPower(para, cluster, macro)
+##    simulatemeancapacity.append(para.TotalCapacity)
+##    for i in range(len(SINRthreshold)):
+##        simulatemeancoverage[i] = simulatemeancoverage[i] + para.successnum[i]
+##        print(simulationtime, simulatemeancoverage)
+##
+##meancapacity.append(np.mean(simulatemeancapacity))
+##for i in range(len(SINRthreshold)):
+##    meancoverage[i].append(np.mean(simulatemeancoverage[i]))
+##
+##print(meancapacity)
+##print(meancoverage)
 
-meancapacity.append(np.mean(simulatemeancapacity))
-for i in range(len(SINRthreshold)):
-    meancoverage[i].append(np.mean(simulatemeancoverage[i]))
-
-print(meancapacity)
-print(meancoverage)
-
-
+if Debug.FILE:
+    FILE1.close()
+    FILE2.close()
 
 # for i in range(len(macro.UEPosition_x[0])):
 #      plt.plot(macro.UEPosition_x[0][i], macro.UEPosition_y[0][i], 'ro-')
