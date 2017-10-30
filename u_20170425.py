@@ -284,12 +284,26 @@ def SelectCooperatedBS(para, macro, pico, user):
     print(len(cluster))    
     
     
+    # for i in range(user.ActualNum):   #Attach users 
+    #     for l in range(len(cluster)):
+    #         if cluster[l].mbs.index == user.Alluser_selectedBS_index[i]: #%%
+    #             cluster[l].ue.Position_x.append(user.Position_x[i])
+    #             cluster[l].ue.Position_y.append(user.Position_y[i])
+    #             cluster[l].ue.index.append(i)
+     
+
+    common_elem = []
     for i in range(user.ActualNum):   #Attach users 
         for l in range(len(cluster)):
-            if cluster[l].mbs.index == user.Alluser_selectedBS_index[i]: #%%
+            common_elem = set(user.Alluser_selectedBS_index[i]).intersection(cluster[l].mbs.index)
+            if common_elem: # Common element exists because empty sequence is false
+                #print(common_elem)
+                cluster[l].ue.index.append(i)
                 cluster[l].ue.Position_x.append(user.Position_x[i])
                 cluster[l].ue.Position_y.append(user.Position_y[i])
-                cluster[l].ue.index.append(i)
+                
+
+
     
     for l in range(len(cluster)):
         print("UEs in cluster=", l, cluster[l].ue.index)
@@ -397,13 +411,29 @@ def Cluster_GenerateZFbeam(para, cluster, macro):
             
             cluster[l].channel.G[i] = np.delete(cluster[l].channel.G[i], 0, 1)
             cluster[l].channel.G_Hermitian[i] = np.conj(cluster[l].channel.G[i]).transpose()
-            cluster[l].channel.G_psuedo[i] = np.dot(inv(np.dot(cluster[l].channel.G_Hermitian[i], cluster[l].channel.G[i])), cluster[l].channel.G_Hermitian[i])
+            print(len(cluster[l].ue.index))
+            try: # Using numpy.inv fails when matrix is singular. Fix it by using pseudo inverse
+                G_prod = inv(np.dot(cluster[l].channel.G_Hermitian[i], cluster[l].channel.G[i]))
+            #pdb.set_trace()
+            except np.linalg.linalg.LinAlgError:
+                print("Empty Matix", cluster[l].ue.index)
+                FILE1.write('%s' % cluster[l].channel.G[i])
+                FILE2.write('%s' % cluster[l].channel.G_Hermitian[i])
+                FILE3.write('%s' % np.dot(cluster[l].channel.G_Hermitian[i], cluster[l].channel.G[i]))
+                FILE1.close()
+                FILE2.close()
+                FILE3.close()
+            #if len(cluster[l].ue.index)==1:
+            #    
+            cluster[l].channel. [i] = np.dot(inv(np.dot(cluster[l].channel.G_Hermitian[i], cluster[l].channel.G[i])), cluster[l].channel.G_Hermitian[i])
             cluster[l].channel.ZF_beam_weight[i] = np.dot((cluster[l].channel.identity_matrix[i] - np.dot(cluster[l].channel.G[i], cluster[l].channel.G_psuedo[i])), \
-                                                          cluster[l].channel.User_BSs_normalize[i][l])
+                                                      cluster[l].channel.User_BSs_normalize[i][l])
+            
+
             norm = np.linalg.norm(cluster[l].channel.ZF_beam_weight[i])
             cluster[l].channel.ZF_beam_weight[i] = cluster[l].channel.ZF_beam_weight[i] / norm
     
-    #pdb.set_trace() 
+    
 
     return para, cluster
 
@@ -535,6 +565,12 @@ simulationcoverage = []
 meancapacity = []
 meancoverage= []
 
+filename = "G.txt"
+FILE1 = open(filename, "w")
+filename = "G_Hermitian.txt"
+FILE2 = open(filename, "w")
+filename = "G_prod.txt"
+FILE3 = open(filename, "w")
 # Initialize result holder
 simulatemeancapacity = []
 simulatemeancoverage = []
